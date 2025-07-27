@@ -1,0 +1,6 @@
+# Example URLs for batch processing
+# Lines starting with # are ignored
+https://github.com
+https://stackoverflow.com
+https://reddit.com
+https://news.ycombinator.com 

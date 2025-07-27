@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test -v ./...
+
+    - name: Run linter
+      uses: golangci/golangci-lint-action@v4
+      with:
+        version: latest
+
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.21', '1.22']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Build
+      run: go build -v ./cmd/webshot
+
+    - name: Test build
+      run: |
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          ./webshot.exe --help
+        else
+          ./webshot --help
+        fi
+
+  release:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build for multiple platforms
+      run: |
+        mkdir -p dist
+        
+        # Linux
+        GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${{ github.ref_name }}" -o dist/webshot-linux-amd64 ./cmd/webshot
+        GOOS=linux GOARCH=arm64 go build -ldflags "-X main.Version=${{ github.ref_name }}" -o dist/webshot-linux-arm64 ./cmd/webshot
+        
+        # macOS
+        GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.Version=${{ github.ref_name }}" -o dist/webshot-darwin-amd64 ./cmd/webshot
+        GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=${{ github.ref_name }}" -o dist/webshot-darwin-arm64 ./cmd/webshot
+        
+        # Windows
+        GOOS=windows GOARCH=amd64 go build -ldflags "-X main.Version=${{ github.ref_name }}" -o dist/webshot-windows-amd64.exe ./cmd/webshot
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/*
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        body: |
+          Automated release for commit ${{ github.sha }}
+          
+          ## Downloads
+          - Linux AMD64: `webshot-linux-amd64`
+          - Linux ARM64: `webshot-linux-arm64`
+          - macOS AMD64: `webshot-darwin-amd64`
+          - macOS ARM64: `webshot-darwin-arm64`
+          - Windows AMD64: `webshot-windows-amd64.exe`
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
